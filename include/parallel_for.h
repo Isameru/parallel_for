@@ -29,6 +29,8 @@
 #include <cassert>
 #include <iostream>
 #include <algorithm>
+#include <functional>
+#include <condition_variable>
 
 #ifdef _WIN32
 #include <intrin.h>
@@ -76,10 +78,10 @@ private:
     constexpr static int MaxWorkerCount = 63;
 
     alignas(64) std::atomic<int> workerCount;
-                std::atomic<uint64_t> workerAvailabilityMask = {0};
-    alignas(64) Job jobs[MaxWorkerCount] = {};
-    alignas(64) Worker workers[MaxWorkerCount] = {};
-    alignas(64) Bed beds[MaxWorkerCount] = {};
+    std::atomic<uint64_t> workerAvailabilityMask = {0};
+    alignas(64) Job jobs[MaxWorkerCount];
+    alignas(64) Worker workers[MaxWorkerCount];
+    alignas(64) Bed beds[MaxWorkerCount];
 
 public:
     Clock::duration SpinLockDuration = std::chrono::microseconds{50};
