@@ -59,6 +59,7 @@ private:
         Idle,
         Busy,
         Sleeping,
+        Awoke,
         Quitting
     };
 
@@ -78,8 +79,8 @@ private:
     constexpr static int MaxWorkerCount = 63;
 
     alignas(64) std::atomic<int> workerCount;
-    std::atomic<uint64_t> workerAvailabilityMask = {0};
-    alignas(64) Job jobs[MaxWorkerCount];
+                std::atomic<uint64_t> workerAvailabilityMask = {0};
+    alignas(64) Job jobs[MaxWorkerCount] = {};
     alignas(64) Worker workers[MaxWorkerCount];
     alignas(64) Bed beds[MaxWorkerCount];
 
@@ -97,10 +98,14 @@ public:
         {
             StartWorker(workerIdx);
         }
+
+        ++workerCount;
     }
 
     ~ThreadHive()
     {
+        --workerCount;
+
         for (int workerIdx = 0; workerIdx < workerCount; ++workerIdx)
         {
             // TODO: This is incorrect.
@@ -119,6 +124,8 @@ public:
         assert(minSpan > 0);
         assert(minSpan <= maxSpan);
 
+        --workerCount;
+
         std::atomic<int> busyWorkerCount = {0};
 
         while (start < exclusiveEnd)
@@ -134,7 +141,9 @@ public:
 
             auto exchangedWorkerAvailabilityMask = workerAvailabilityMask.exchange(0);
 
-            if (!exchangedWorkerAvailabilityMask)
+            auto hireMask = exchangedWorkerAvailabilityMask & (WorkerMask(workerCount + 1) - 1);
+
+            if (!hireMask)
             {
                 // There are no idle workers. Do the minimal portion of work on itself and check again.
                 //
@@ -144,17 +153,19 @@ public:
                 continue;
             }
 
-            int workerIdx = First1BitIndex(exchangedWorkerAvailabilityMask);
+            int workerIdx = First1BitIndex(hireMask);
             auto workerMask = WorkerMask(workerIdx);
             workerAvailabilityMask.fetch_or(exchangedWorkerAvailabilityMask ^ workerMask);
 
-            auto availableWorkerCount = CountBits(exchangedWorkerAvailabilityMask);
+            auto availableWorkerCount = CountBits(hireMask);
             int spanPerWorker = std::min(std::max(spanLeft / (availableWorkerCount + 1), minSpan), maxSpan);
 
             auto localEnd = std::min(start + spanPerWorker, exclusiveEnd);
             ScheduleWorker(workerIdx, handler, start, localEnd - start, busyWorkerCount);
             start = localEnd;
         }
+
+        ++workerCount;
 
         while (busyWorkerCount) {}
     }
@@ -244,7 +255,13 @@ private:
         if (lastWorkerState == WorkerState::Sleeping)
         {
             auto& bed = beds[workerIdx];
-            bed.condVar.notify_one();
+
+            do {
+                bed.condVar.notify_one();
+            }
+            while (worker.state != WorkerState::Awoke);
+
+            worker.state = WorkerState::Busy;
         }
         else
         {
@@ -274,6 +291,16 @@ private:
                         bed.condVar.wait(lock, [&worker]() {
                             return worker.state != WorkerState::Sleeping;
                         });
+
+                        expState = WorkerState::Busy;
+                        if (worker.state.compare_exchange_weak(expState, WorkerState::Awoke))
+                        {
+                            while (worker.state == WorkerState::Awoke) {}
+                        }
+                        else
+                        {
+                            assert(worker.state == WorkerState::Quitting);
+                        }
                     }
                 }
             }

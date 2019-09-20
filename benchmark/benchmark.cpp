@@ -56,21 +56,33 @@ Matrix MatMul(ThreadHive& hive, const Matrix& A, const Matrix& B)
     X.width = B.width;
     X.data.resize(X.height * X.width, 0.0);
 
-    hive.For(0, X.height, 1, 16, [&](int y0, int y1) {
+    hive.For(0, X.height, 1, 4, [&](int y0, int y1) {
         //auto ttx = plog.Trace((int)std::hash<std::thread::id>{}(std::this_thread::get_id()));
         while (y0 < y1) {
             int y = y0++;
-            //hive.For(0, X.width, [&, y](int x0, int x1) {
-            for (int x = 0; x < X.width; ++x)
-            {
-                //while (x0 < x1) {
-                    //int x = x0++;
+            hive.For(0, X.width, 4, 16, [&, y](int x0, int x1) {
+                while (x0 < x1) {
+                    int x = x0++;
                     for (int k = 0; k < A.width; ++k)
                     {
                         X.at(y, x) += A.at(y, k) * B.at(k, x);
                     }
-                //}
-            }//);
+                }
+            });
+        }
+    });
+
+    hive.For(0, X.height, 1, 3, [&](int y0, int y1) {
+        //auto ttx = plog.Trace((int)std::hash<std::thread::id>{}(std::this_thread::get_id()));
+        while (y0 < y1) {
+            int y = y0++;
+            for (int x = 0; x < X.width; ++x)
+            {
+                for (int k = 0; k < A.width; ++k)
+                {
+                    X.at(y, x) += A.at(y, k) * B.at(k, x);
+                }
+            }
         }
     });
 
@@ -85,6 +97,7 @@ int main()
     auto B = GenerateMatrix(450, 760);
 
     ThreadHive hive;
+    hive.SpinLockDuration = std::chrono::nanoseconds{0};
 
     auto X = MatMul(hive, A, B);
 }
