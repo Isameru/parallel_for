@@ -293,7 +293,7 @@ private:
                         });
 
                         expState = WorkerState::Busy;
-                        if (worker.state.compare_exchange_weak(expState, WorkerState::Awoke))
+                        if (worker.state.compare_exchange_strong(expState, WorkerState::Awoke))
                         {
                             while (worker.state == WorkerState::Awoke) {}
                         }
@@ -314,7 +314,6 @@ private:
                 std::atomic_fetch_or(&workerAvailabilityMask, workerMask);
                 lastBusyTime = Clock::now();
             }
-
         }
     }
 };
