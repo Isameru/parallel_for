@@ -1,4 +1,6 @@
 
+// TODO: Rewrite the entire content of this file.
+
 #include <vector>
 #include <fstream>
 
@@ -97,7 +99,7 @@ int main()
     auto B = GenerateMatrix(450, 760);
 
     ThreadHive hive;
-    hive.SpinLockDuration = std::chrono::nanoseconds{0};
+    hive.SpinLockDuration = std::chrono::nanoseconds{2000};
 
     auto X = MatMul(hive, A, B);
 }
