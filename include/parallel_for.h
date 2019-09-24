@@ -170,10 +170,12 @@ public:
 
             auto exchangedWorkerAvailabilityMask = workerAvailabilityMask.exchange(0);
 
-            auto hireMask = exchangedWorkerAvailabilityMask & (WorkerMask(effectiveWorkerCount + 1) - 1);
+            auto hireMask = exchangedWorkerAvailabilityMask & EffectiveWorkerMask(effectiveWorkerCount);
 
             if (!hireMask)
             {
+                workerAvailabilityMask.fetch_or(hireMask);
+
                 // There are no idle workers. Do the minimal portion of work itself and check again.
                 //
                 auto localEnd = std::min(start + minSpan, exclusiveEnd);
@@ -205,6 +207,11 @@ private:
     static uint64_t WorkerMask(int workerIdx)
     {
         return 1ull << workerIdx;
+    }
+
+    static uint64_t EffectiveWorkerMask(int effectiveWorkerCount)
+    {
+        return effectiveWorkerCount > 0 ? (1ull << effectiveWorkerCount) - 1 : 0ull;
     }
 
     // Counts the number of 1-bits.
